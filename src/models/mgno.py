@@ -9,7 +9,7 @@ class MGNO2d(nn.Module):
     Implements a 2-level V-cycle (Fine Grid -> Coarse Grid -> Fine Grid)
     using coordinate-based downsampling and GNO layers.
     """
-    def __init__(self, in_channels, out_channels, width, radius_fine=0.15, radius_coarse=0.45):
+    def __init__(self, in_channels, out_channels, width, radius_fine=0.15, radius_coarse=0.45, chunk_size=64):
         super(MGNO2d, self).__init__()
         self.width = width
 
@@ -17,9 +17,9 @@ class MGNO2d(nn.Module):
         self.lift = nn.Linear(in_channels, self.width)
 
         # Multi-scale layers
-        self.fine_layer1 = GNOLayer(self.width, self.width, radius=radius_fine)
-        self.coarse_layer = GNOLayer(self.width, self.width, radius=radius_coarse)
-        self.fine_layer2 = GNOLayer(self.width, self.width, radius=radius_fine)
+        self.fine_layer1 = GNOLayer(self.width, self.width, radius=radius_fine, chunk_size=chunk_size)
+        self.coarse_layer = GNOLayer(self.width, self.width, radius=radius_coarse, chunk_size=chunk_size)
+        self.fine_layer2 = GNOLayer(self.width, self.width, radius=radius_fine, chunk_size=chunk_size)
 
         # Projection
         self.proj1 = nn.Linear(self.width, 128)
