@@ -7,6 +7,8 @@ model:
   modes2: 12        # Retain 12 low-frequency modes on Y-axis
   width: 32         # Hidden channel dimension
   num_layers: 4     # Number of integral operator layers
+  padding: 9         # Zero padding used for non-periodic Darcy inputs
+  append_grid: true  # Append (x, y) coordinates before lifting
 
 training:
   batch_size: 20
@@ -19,5 +21,7 @@ data:
   file_path: "data/piececonst_r421_N1024_smooth1.mat"
   x_key: "coeff"
   y_key: "sol"
-  num_samples: 1000 # 1000 for training as mentioned in the paper
-  resolution: 85    # Subsampled spatial resolution (e.g., 85x85)
+  num_train: 1000
+  num_test: 200
+  subsample: 5
+  resolution: 85    # 421 subsampled by 5 gives 85x85

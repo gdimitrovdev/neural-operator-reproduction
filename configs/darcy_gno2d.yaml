@@ -6,6 +6,7 @@ model:
   width: 32         # Hidden channel dimension
   radius: 0.25      # Integration radius parameter
   num_layers: 4     # Number of graph operator layers
+  chunk_size: 64
 
 training:
   batch_size: 5     # Smaller batch size for GNO due to higher memory usage
@@ -18,6 +19,8 @@ data:
   file_path: "data/piececonst_r421_N1024_smooth1.mat"
   x_key: "coeff"
   y_key: "sol"
-  num_samples: 1000
+  num_train: 1000
+  num_test: 200
+  subsample: 5
   resolution: 85
   flatten_for_graph: true  # Required flag to format grid as graph nodes

@@ -22,10 +22,12 @@ def main():
     
     sub = config['data']['subsample']
     # Burgers data is (N, 8192). Subsample to (N, 1024)
-    x_train = full_dataset.x[:1000, ::sub, :]
-    y_train = full_dataset.y[:1000, ::sub, :]
-    x_test = full_dataset.x[-200:, ::sub, :]
-    y_test = full_dataset.y[-200:, ::sub, :]
+    num_train = config['data']['num_train']
+    num_test = config['data']['num_test']
+    x_train = full_dataset.x[:num_train, ::sub, :]
+    y_train = full_dataset.y[:num_train, ::sub, :]
+    x_test = full_dataset.x[-num_test:, ::sub, :]
+    y_test = full_dataset.y[-num_test:, ::sub, :]
 
     train_loader = DataLoader(torch.utils.data.TensorDataset(x_train, y_train), batch_size=config['training']['batch_size'], shuffle=True)
     test_loader = DataLoader(torch.utils.data.TensorDataset(x_test, y_test), batch_size=config['training']['batch_size'], shuffle=False)
@@ -36,7 +38,8 @@ def main():
         out_channels=config['model']['out_channels'],
         modes=config['model']['modes'],
         width=config['model']['width'],
-        num_layers=config['model']['num_layers']
+        num_layers=config['model']['num_layers'],
+        append_grid=config['model'].get('append_grid', True)
     ).to(device)
 
     # 3. Optimizers

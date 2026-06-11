@@ -5,6 +5,7 @@ model:
   modes: 16
   width: 64
   num_layers: 4
+  append_grid: true
 
 training:
   batch_size: 20
@@ -16,7 +17,7 @@ training:
 data:
   file_path: "data/burgers_data_R10.mat"
   x_key: "a"   # initial condition
-  y_key: "u"   # solution at T=1
+  y_key: "u"   # solution at T=1; required in the full Burgers dataset
   num_train: 1000
   num_test: 200
   subsample: 8 # Original data is 8192, sub-sampling by 8 gives 1024 points
