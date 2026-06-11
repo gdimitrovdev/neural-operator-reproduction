@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+data/burgers_data_R10.mat
+data/piececonst_r421_N1024_smooth1.mat
+data/piececonst_r421_N1024_smooth2.mat
