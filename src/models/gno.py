@@ -1,67 +1,98 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from src.models.gno import GNOLayer
 
-class MGNO2d(nn.Module):
+class GNOLayer(nn.Module):
     """
-    Multipole Graph Neural Operator.
-    Implements a 2-level V-cycle (Fine Grid -> Coarse Grid -> Fine Grid)
-    using coordinate-based downsampling and GNO layers.
+    Pure-PyTorch Graph Neural Operator Layer.
+    Computes kernel integration on coordinate-based graphs using a threshold radius.
     """
-    def __init__(self, in_channels, out_channels, width, radius_fine=0.15, radius_coarse=0.45):
-        super(MGNO2d, self).__init__()
+    def __init__(self, in_channels, out_channels, coord_dim=2, radius=0.25):
+        super(GNOLayer, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.radius = radius
+
+        # Kernel MLP: maps Concatenated coordinates (x_i, y_j) -> weight matrix
+        # For simplicity, we project to (in_channels * out_channels) to construct the kernel matrix
+        self.kernel_mlp = nn.Sequential(
+            nn.Linear(coord_dim * 2, 64),
+            nn.GELU(),
+            nn.Linear(64, in_channels * out_channels)
+        )
+        self.local_linear = nn.Linear(in_channels, out_channels)
+
+    def forward(self, h, coords):
+        """
+        Args:
+            h: Node hidden features of shape (batch, num_nodes, in_channels)
+            coords: Node coordinates of shape (batch, num_nodes, coord_dim)
+        """
+        batch_size, num_nodes, _ = h.shape
+        device = h.device
+
+        # 1. Compute pairwise distance matrix
+        # coords_i shape: (batch, num_nodes, 1, coord_dim)
+        # coords_j shape: (batch, 1, num_nodes, coord_dim)
+        coords_i = coords.unsqueeze(2)
+        coords_j = coords.unsqueeze(1)
+        diff = coords_i - coords_j
+        dist = torch.norm(diff, p=2, dim=-1)  # (batch, num_nodes, num_nodes)
+
+        # 2. Build adjacency mask based on threshold radius
+        adj_mask = (dist <= self.radius).float()  # (batch, num_nodes, num_nodes)
+
+        # 3. Compute kernel weights for all node pairs
+        # Concat coords_i and coords_j -> shape: (batch, num_nodes, num_nodes, coord_dim * 2)
+        concat_coords = torch.cat([coords_i.expand(-1, -1, num_nodes, -1),
+                                   coords_j.expand(-1, num_nodes, -1, -1)], dim=-1)
+        
+        # Flatten batch and spatial dimensions for MLP forward pass
+        kernel_weights = self.kernel_mlp(concat_coords.view(-1, concat_coords.size(-1)))
+        kernel_weights = kernel_weights.view(batch_size, num_nodes, num_nodes, self.in_channels, self.out_channels)
+
+        # 4. Perform weighted message aggregation over neighbors
+        # h expanded shape: (batch, 1, num_nodes, in_channels)
+        h_expanded = h.unsqueeze(1).expand(-1, num_nodes, -1, -1)
+        
+        # Message calculation: elementwise multiply features with the generated kernel weights
+        # (batch, num_nodes, num_nodes, out_channels)
+        messages = torch.einsum("bijn,bijnm->bijm", h_expanded, kernel_weights)
+
+        # Mask out non-neighbors
+        messages = messages * adj_mask.unsqueeze(-1)
+
+        # Average aggregation
+        num_neighbors = adj_mask.sum(dim=-1, keepdim=True).clamp(min=1.0)
+        aggregated = messages.sum(dim=2) / num_neighbors  # (batch, num_nodes, out_channels)
+
+        # 5. Combine non-local kernel integral with pointwise local linear transform
+        out = aggregated + self.local_linear(h)
+        return out
+
+
+class GNO2d(nn.Module):
+    def __init__(self, in_channels, out_channels, width, radius=0.25, num_layers=4):
+        super(GNO2d, self).__init__()
         self.width = width
+        self.num_layers = num_layers
 
-        # Lifting
         self.lift = nn.Linear(in_channels, self.width)
-
-        # Multi-scale layers
-        self.fine_layer1 = GNOLayer(self.width, self.width, radius=radius_fine)
-        self.coarse_layer = GNOLayer(self.width, self.width, radius=radius_coarse)
-        self.fine_layer2 = GNOLayer(self.width, self.width, radius=radius_fine)
-
-        # Projection
+        self.gno_layers = nn.ModuleList([GNOLayer(self.width, self.width, coord_dim=2, radius=radius) for _ in range(num_layers)])
+        
         self.proj1 = nn.Linear(self.width, 128)
         self.proj2 = nn.Linear(128, out_channels)
 
     def forward(self, x, coords):
         """
         Args:
-            x: Fine grid features (batch, num_nodes, in_channels)
-            coords: Fine grid coordinates (batch, num_nodes, 2)
+            x: Input grid of shape (batch, num_nodes, in_channels)
+            coords: Node coordinates of shape (batch, num_nodes, 2)
         """
-        batch_size, num_nodes, _ = x.shape
-        h_fine = self.lift(x)
-
-        # 1. Fine-scale convolution
-        h_fine = F.gelu(self.fine_layer1(h_fine, coords))
-
-        # 2. Downward Pass: Coarsen the coordinates (Subsample every 4th node for simplicity)
-        # In practice, this represents spatial clustering or grid decimation
-        coarse_indices = torch.arange(0, num_nodes, step=4, device=x.device)
-        coords_coarse = coords[:, coarse_indices, :]
-        h_coarse_pooled = h_fine[:, coarse_indices, :]
-
-        # 3. Coarse-scale convolution (large-range interactions)
-        h_coarse = F.gelu(self.coarse_layer(h_coarse_pooled, coords_coarse))
-
-        # 4. Upward Pass: Interpolate coarse features back to fine coordinates
-        # Compute inverse distances between fine coordinates and coarse coordinates
-        # Shape: (batch, num_nodes, num_coarse_nodes)
-        dists = torch.cdist(coords, coords_coarse, p=2)
-        weights = 1.0 / (dists + 1e-6)
-        weights = weights / weights.sum(dim=-1, keepdim=True)  # Normalize weights
-
-        # Perform coordinate-based linear interpolation
-        h_coarse_upsampled = torch.bmm(weights, h_coarse)
-
-        # 5. Fuse fine-scale and upsampled coarse-scale features
-        h_fused = F.gelu(h_fine + h_coarse_upsampled)
-
-        # 6. Final fine-scale refinement convolution
-        h_fused = F.gelu(self.fine_layer2(h_fused, coords))
-
-        # Output projection
-        out = F.gelu(self.proj1(h_fused))
-        return self.proj2(out)
+        h = self.lift(x)
+        for i in range(self.num_layers):
+            h = F.gelu(self.gno_layers[i](h, coords))
+            
+        h = F.gelu(self.proj1(h))
+        out = self.proj2(h)
+        return out
