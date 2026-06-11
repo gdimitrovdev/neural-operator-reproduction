@@ -34,6 +34,12 @@ def main():
     # Burgers data is (N, 8192). Subsample to (N, 1024)
     num_train = config['data']['num_train']
     num_test = config['data']['num_test']
+    total = full_dataset.x.size(0)
+    if num_train + num_test > total:
+        raise ValueError(
+            f"num_train + num_test = {num_train + num_test} exceeds the {total} samples in "
+            f"{config['data']['file_path']}, so the test split would overlap the training split."
+        )
     x_train = full_dataset.x[:num_train, ::sub, :]
     y_train = full_dataset.y[:num_train, ::sub, :]
     x_test = full_dataset.x[-num_test:, ::sub, :]

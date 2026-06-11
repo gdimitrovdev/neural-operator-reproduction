@@ -38,7 +38,7 @@ Each config includes a `seed` block and a `logging` block. Training writes:
 
 Expected local paths:
 
-- `data/piececonst_r421_N1024_smooth1.mat` with keys `coeff` and `sol` for Darcy flow.
+- `data/piececonst_r421_N1024_smooth1.mat` (training) and `data/piececonst_r421_N1024_smooth2.mat` (testing) with keys `coeff` and `sol` for Darcy flow. Training and testing use separate files because `smooth1` only has 1024 samples — splitting it 1000/200 would overlap the splits.
 - `data/burgers_data_R10.mat` with keys `a` and `u` for Burgers. If the local file only contains `a`/`a_smooth` fields, it is not the complete supervised dataset required by the training script.
 
 The implementation does not import code from existing neural-operator repositories.

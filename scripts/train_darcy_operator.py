@@ -13,7 +13,7 @@ from src.models.fno import FNO2d
 from src.models.gno import GNO2d
 from src.models.lno import LNO2d
 from src.models.mgno import MGNO2d
-from src.utils.data_utils import MatDataset, get_grid2d
+from src.utils.data_utils import MatDataset, UnitGaussianNormalizer, get_grid2d
 from src.utils.losses import RelativeL2Loss
 from src.utils.training import ExperimentLogger, set_seed
 
@@ -53,8 +53,23 @@ def main():
     sub = data_config["subsample"]
     x_train = dataset.x[:num_train, ::sub, ::sub, :]
     y_train = dataset.y[:num_train, ::sub, ::sub, :]
-    x_test = dataset.x[-num_test:, ::sub, ::sub, :]
-    y_test = dataset.y[-num_test:, ::sub, ::sub, :]
+
+    test_file = data_config.get("test_file_path")
+    if test_file:
+        # Paper protocol: train on smooth1, test on the independent smooth2 file.
+        test_dataset = MatDataset(test_file, x_key=data_config["x_key"], y_key=data_config["y_key"])
+        x_test = test_dataset.x[:num_test, ::sub, ::sub, :]
+        y_test = test_dataset.y[:num_test, ::sub, ::sub, :]
+    else:
+        total = dataset.x.size(0)
+        if num_train + num_test > total:
+            raise ValueError(
+                f"num_train + num_test = {num_train + num_test} exceeds the {total} samples in "
+                f"{data_config['file_path']}, so the test split would overlap the training split. "
+                "Set data.test_file_path to a separate file or reduce the split sizes."
+            )
+        x_test = dataset.x[-num_test:, ::sub, ::sub, :]
+        y_test = dataset.y[-num_test:, ::sub, ::sub, :]
 
     graph_model = config["model"]["name"] in {"GNO2d", "MGNO2d"}
     if graph_model:
@@ -62,6 +77,18 @@ def main():
         y_train = y_train.reshape(y_train.size(0), -1, y_train.size(-1))
         x_test = x_test.reshape(x_test.size(0), -1, x_test.size(-1))
         y_test = y_test.reshape(y_test.size(0), -1, y_test.size(-1))
+
+    x_normalizer = y_normalizer = None
+    if data_config.get("normalize", False):
+        # Pointwise Gaussian normalization as in the official FNO Darcy code:
+        # inputs are encoded for train and test; targets are encoded for
+        # training only and predictions decoded before the loss, so reported
+        # errors stay in physical units.
+        x_normalizer = UnitGaussianNormalizer(x_train)
+        x_train = x_normalizer.encode(x_train)
+        x_test = x_normalizer.encode(x_test)
+        y_normalizer = UnitGaussianNormalizer(y_train)
+        y_train = y_normalizer.encode(y_train)
 
     train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=config["training"]["batch_size"], shuffle=True)
     test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=config["training"]["batch_size"], shuffle=False)
@@ -78,6 +105,9 @@ def main():
     criterion = RelativeL2Loss()
     logger = ExperimentLogger(config, config_path=args.config)
 
+    if y_normalizer is not None:
+        y_normalizer.to(device)
+
     resolution = data_config["resolution"]
     for epoch in range(config["training"]["epochs"]):
         model.train()
@@ -90,6 +120,9 @@ def main():
                 out = model(x, coords)
             else:
                 out = model(x)
+            if y_normalizer is not None:
+                out = y_normalizer.decode(out)
+                y = y_normalizer.decode(y)
             loss = criterion(out, y)
             loss.backward()
             optimizer.step()
@@ -106,6 +139,8 @@ def main():
                     out = model(x, coords)
                 else:
                     out = model(x)
+                if y_normalizer is not None:
+                    out = y_normalizer.decode(out)
                 test_loss += criterion(out, y).item()
 
         train_loss = train_loss / len(train_loader)

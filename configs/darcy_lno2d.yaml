@@ -26,6 +26,8 @@ logging:
 
 data:
   file_path: "data/piececonst_r421_N1024_smooth1.mat"
+  test_file_path: "data/piececonst_r421_N1024_smooth2.mat"
+  normalize: true     # pointwise Gaussian normalization (official FNO Darcy setup)
   x_key: "coeff"
   y_key: "sol"
   num_train: 1000
