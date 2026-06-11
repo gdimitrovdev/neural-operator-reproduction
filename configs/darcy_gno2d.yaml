@@ -1,0 +1,23 @@
+# Configuration for GNO on Darcy Flow (2D)
+model:
+  name: "GNO2d"
+  in_channels: 1
+  out_channels: 1
+  width: 32         # Hidden channel dimension
+  radius: 0.25      # Integration radius parameter
+  num_layers: 4     # Number of graph operator layers
+
+training:
+  batch_size: 5     # Smaller batch size for GNO due to higher memory usage
+  epochs: 500
+  learning_rate: 0.001
+  step_size: 100
+  gamma: 0.5
+
+data:
+  file_path: "data/piececonst_r421_N1024_smooth1.mat"
+  x_key: "coeff"
+  y_key: "sol"
+  num_samples: 1000
+  resolution: 85
+  flatten_for_graph: true  # Required flag to format grid as graph nodes
