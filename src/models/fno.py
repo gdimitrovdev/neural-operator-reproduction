@@ -63,7 +63,7 @@ class SpectralConv2d(nn.Module):
 
 
 class FNO2d(nn.Module):
-    def __init__(self, in_channels, out_channels, modes1, modes2, width, num_layers=4, padding=0, append_grid=True):
+    def __init__(self, in_channels, out_channels, modes1, modes2, width, num_layers=4, padding=0, append_grid=True, proj_width=128):
         super(FNO2d, self).__init__()
         self.modes1 = modes1
         self.modes2 = modes2
@@ -81,8 +81,8 @@ class FNO2d(nn.Module):
         self.local_convs = nn.ModuleList([nn.Conv2d(self.width, self.width, 1) for _ in range(num_layers)])
 
         # 3. Projection Step (maps model width back to output channels)
-        self.proj1 = nn.Conv2d(self.width, 128, 1)
-        self.proj2 = nn.Conv2d(128, out_channels, 1)
+        self.proj1 = nn.Conv2d(self.width, proj_width, 1)
+        self.proj2 = nn.Conv2d(proj_width, out_channels, 1)
 
     def forward(self, x):
         if self.append_grid:
@@ -134,7 +134,7 @@ class SpectralConv1d(nn.Module):
         return torch.fft.irfft(out_ft, n=x.size(-1))
 
 class FNO1d(nn.Module):
-    def __init__(self, in_channels, out_channels, modes, width, num_layers=4, append_grid=True):
+    def __init__(self, in_channels, out_channels, modes, width, num_layers=4, append_grid=True, proj_width=128):
         super(FNO1d, self).__init__()
         self.modes1 = modes
         self.width = width
@@ -145,8 +145,8 @@ class FNO1d(nn.Module):
         self.lift = nn.Conv1d(lift_channels, self.width, 1)
         self.spectral_convs = nn.ModuleList([SpectralConv1d(self.width, self.width, self.modes1) for _ in range(num_layers)])
         self.local_convs = nn.ModuleList([nn.Conv1d(self.width, self.width, 1) for _ in range(num_layers)])
-        self.proj1 = nn.Conv1d(self.width, 128, 1)
-        self.proj2 = nn.Conv1d(128, out_channels, 1)
+        self.proj1 = nn.Conv1d(self.width, proj_width, 1)
+        self.proj2 = nn.Conv1d(proj_width, out_channels, 1)
 
     def forward(self, x):
         if self.append_grid:

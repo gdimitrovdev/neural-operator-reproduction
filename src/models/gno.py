@@ -7,7 +7,7 @@ class GNOLayer(nn.Module):
     Pure-PyTorch Graph Neural Operator Layer.
     Computes kernel integration on coordinate-based graphs using a threshold radius.
     """
-    def __init__(self, in_channels, out_channels, coord_dim=2, radius=0.25, chunk_size=64):
+    def __init__(self, in_channels, out_channels, coord_dim=2, radius=0.25, chunk_size=64, kernel_hidden_dim=64):
         super(GNOLayer, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -16,9 +16,9 @@ class GNOLayer(nn.Module):
 
         # Kernel MLP: maps concatenated coordinates (x_i, y_j) to output-channel kernels.
         self.kernel_mlp = nn.Sequential(
-            nn.Linear(coord_dim * 2, 64),
+            nn.Linear(coord_dim * 2, kernel_hidden_dim),
             nn.GELU(),
-            nn.Linear(64, out_channels)
+            nn.Linear(kernel_hidden_dim, out_channels)
         )
         self.source_linear = nn.Linear(in_channels, out_channels)
         self.local_linear = nn.Linear(in_channels, out_channels)
@@ -65,19 +65,19 @@ class GNOLayer(nn.Module):
 
 
 class GNO2d(nn.Module):
-    def __init__(self, in_channels, out_channels, width, radius=0.25, num_layers=4, chunk_size=64):
+    def __init__(self, in_channels, out_channels, width, radius=0.25, num_layers=4, chunk_size=64, kernel_hidden_dim=64, proj_width=128):
         super(GNO2d, self).__init__()
         self.width = width
         self.num_layers = num_layers
 
         self.lift = nn.Linear(in_channels, self.width)
         self.gno_layers = nn.ModuleList([
-            GNOLayer(self.width, self.width, coord_dim=2, radius=radius, chunk_size=chunk_size)
+            GNOLayer(self.width, self.width, coord_dim=2, radius=radius, chunk_size=chunk_size, kernel_hidden_dim=kernel_hidden_dim)
             for _ in range(num_layers)
         ])
         
-        self.proj1 = nn.Linear(self.width, 128)
-        self.proj2 = nn.Linear(128, out_channels)
+        self.proj1 = nn.Linear(self.width, proj_width)
+        self.proj2 = nn.Linear(proj_width, out_channels)
 
     def forward(self, x, coords):
         """

@@ -1,19 +1,29 @@
-import yaml
+import argparse
+import os
+import sys
+
 import torch
 import torch.optim as optim
+import yaml
 from torch.utils.data import DataLoader
-import sys
-import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.models.fno import FNO1d
 from src.utils.losses import RelativeL2Loss
 from src.utils.data_utils import MatDataset
+from src.utils.training import ExperimentLogger, set_seed
 
 def main():
-    with open("configs/burgers_fno1d.yaml", "r") as f:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default="configs/burgers_fno1d.yaml")
+    args = parser.parse_args()
+
+    with open(args.config, "r") as f:
         config = yaml.safe_load(f)
+
+    seed_config = config.get("seed", {})
+    set_seed(seed_config.get("value", 0), deterministic=seed_config.get("deterministic", False))
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -33,19 +43,17 @@ def main():
     test_loader = DataLoader(torch.utils.data.TensorDataset(x_test, y_test), batch_size=config['training']['batch_size'], shuffle=False)
 
     # 2. Init Model
-    model = FNO1d(
-        in_channels=config['model']['in_channels'],
-        out_channels=config['model']['out_channels'],
-        modes=config['model']['modes'],
-        width=config['model']['width'],
-        num_layers=config['model']['num_layers'],
-        append_grid=config['model'].get('append_grid', True)
-    ).to(device)
+    model_config = config['model']
+    model_kwargs = {k: v for k, v in model_config.items() if k != 'name'}
+    model = FNO1d(**model_kwargs).to(device)
 
     # 3. Optimizers
-    optimizer = optim.Adam(model.parameters(), lr=config['training']['learning_rate'], weight_decay=1e-4)
+    lr = config['training']['learning_rate']
+    weight_decay = float(config['training'].get('weight_decay', 1e-4))
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=config['training']['step_size'], gamma=config['training']['gamma'])
     criterion = RelativeL2Loss()
+    logger = ExperimentLogger(config, config_path=args.config)
 
     # 4. Training Loop
     for epoch in range(config['training']['epochs']):
@@ -69,9 +77,19 @@ def main():
                 x, y = x.to(device), y.to(device)
                 out = model(x)
                 test_loss += criterion(out, y).item()
+
+        train_loss = train_loss / len(train_loader)
+        test_loss = test_loss / len(test_loader)
+        learning_rate = optimizer.param_groups[0]["lr"]
+        logger.log_epoch(epoch, train_loss, test_loss, learning_rate)
+        logger.save_checkpoint(model, optimizer, scheduler, epoch, train_loss, test_loss)
                 
         if epoch % 10 == 0:
-            print(f"Epoch {epoch} | Train L2: {train_loss/len(train_loader):.4f} | Test L2: {test_loss/len(test_loader):.4f}")
+            print(f"Epoch {epoch} | Train L2: {train_loss:.4f} | Test L2: {test_loss:.4f}")
+
+    logger.save_summary(config['training']['epochs'] - 1, train_loss, test_loss)
+    if logger.run_dir is not None:
+        print(f"Saved run artifacts to: {logger.run_dir}")
 
 if __name__ == "__main__":
     main()

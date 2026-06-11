@@ -15,49 +15,21 @@ from src.models.lno import LNO2d
 from src.models.mgno import MGNO2d
 from src.utils.data_utils import MatDataset, get_grid2d
 from src.utils.losses import RelativeL2Loss
+from src.utils.training import ExperimentLogger, set_seed
 
 
 def build_model(config):
     model_config = config["model"]
     name = model_config["name"]
+    model_kwargs = {k: v for k, v in model_config.items() if k != "name"}
     if name == "FNO2d":
-        return FNO2d(
-            in_channels=model_config["in_channels"],
-            out_channels=model_config["out_channels"],
-            modes1=model_config["modes1"],
-            modes2=model_config["modes2"],
-            width=model_config["width"],
-            num_layers=model_config["num_layers"],
-            padding=model_config.get("padding", 0),
-            append_grid=model_config.get("append_grid", True),
-        )
+        return FNO2d(**model_kwargs)
     if name == "GNO2d":
-        return GNO2d(
-            in_channels=model_config["in_channels"],
-            out_channels=model_config["out_channels"],
-            width=model_config["width"],
-            radius=model_config["radius"],
-            num_layers=model_config["num_layers"],
-            chunk_size=model_config.get("chunk_size", 64),
-        )
+        return GNO2d(**model_kwargs)
     if name == "LNO2d":
-        return LNO2d(
-            in_channels=model_config["in_channels"],
-            out_channels=model_config["out_channels"],
-            width=model_config["width"],
-            rank=model_config["rank"],
-            num_layers=model_config["num_layers"],
-            append_grid=model_config.get("append_grid", True),
-        )
+        return LNO2d(**model_kwargs)
     if name == "MGNO2d":
-        return MGNO2d(
-            in_channels=model_config["in_channels"],
-            out_channels=model_config["out_channels"],
-            width=model_config["width"],
-            radius_fine=model_config["radius_fine"],
-            radius_coarse=model_config["radius_coarse"],
-            chunk_size=model_config.get("chunk_size", 64),
-        )
+        return MGNO2d(**model_kwargs)
     raise ValueError(f"Unsupported model name: {name}")
 
 
@@ -68,6 +40,9 @@ def main():
 
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
+
+    seed_config = config.get("seed", {})
+    set_seed(seed_config.get("value", 0), deterministic=seed_config.get("deterministic", False))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data_config = config["data"]
@@ -83,22 +58,25 @@ def main():
 
     graph_model = config["model"]["name"] in {"GNO2d", "MGNO2d"}
     if graph_model:
-        x_train = x_train.view(x_train.size(0), -1, x_train.size(-1))
-        y_train = y_train.view(y_train.size(0), -1, y_train.size(-1))
-        x_test = x_test.view(x_test.size(0), -1, x_test.size(-1))
-        y_test = y_test.view(y_test.size(0), -1, y_test.size(-1))
+        x_train = x_train.reshape(x_train.size(0), -1, x_train.size(-1))
+        y_train = y_train.reshape(y_train.size(0), -1, y_train.size(-1))
+        x_test = x_test.reshape(x_test.size(0), -1, x_test.size(-1))
+        y_test = y_test.reshape(y_test.size(0), -1, y_test.size(-1))
 
     train_loader = DataLoader(TensorDataset(x_train, y_train), batch_size=config["training"]["batch_size"], shuffle=True)
     test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=config["training"]["batch_size"], shuffle=False)
 
     model = build_model(config).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=config["training"]["learning_rate"], weight_decay=1e-4)
+    lr = config["training"]["learning_rate"]
+    weight_decay = float(config["training"].get("weight_decay", 1e-4))
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.StepLR(
         optimizer,
         step_size=config["training"]["step_size"],
         gamma=config["training"]["gamma"],
     )
     criterion = RelativeL2Loss()
+    logger = ExperimentLogger(config, config_path=args.config)
 
     resolution = data_config["resolution"]
     for epoch in range(config["training"]["epochs"]):
@@ -130,11 +108,21 @@ def main():
                     out = model(x)
                 test_loss += criterion(out, y).item()
 
+        train_loss = train_loss / len(train_loader)
+        test_loss = test_loss / len(test_loader)
+        learning_rate = optimizer.param_groups[0]["lr"]
+        logger.log_epoch(epoch, train_loss, test_loss, learning_rate)
+        logger.save_checkpoint(model, optimizer, scheduler, epoch, train_loss, test_loss)
+
         if epoch % 10 == 0:
             print(
-                f"Epoch {epoch} | Train Rel L2: {train_loss / len(train_loader):.4f} "
-                f"| Test Rel L2: {test_loss / len(test_loader):.4f}"
+                f"Epoch {epoch} | Train Rel L2: {train_loss:.4f} "
+                f"| Test Rel L2: {test_loss:.4f}"
             )
+
+    logger.save_summary(config["training"]["epochs"] - 1, train_loss, test_loss)
+    if logger.run_dir is not None:
+        print(f"Saved run artifacts to: {logger.run_dir}")
 
 
 if __name__ == "__main__":

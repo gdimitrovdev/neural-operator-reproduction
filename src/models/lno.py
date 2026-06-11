@@ -40,7 +40,7 @@ class LowRankKernel2d(nn.Module):
 
 
 class LNO2d(nn.Module):
-    def __init__(self, in_channels, out_channels, width, rank=8, num_layers=4, append_grid=True):
+    def __init__(self, in_channels, out_channels, width, rank=8, num_layers=4, append_grid=True, kernel_hidden_dim=64, proj_width=128):
         super(LNO2d, self).__init__()
         self.width = width
         self.num_layers = num_layers
@@ -49,10 +49,10 @@ class LNO2d(nn.Module):
         lift_channels = in_channels + 2 if append_grid else in_channels
         self.lift = nn.Linear(lift_channels, self.width)
         self.low_rank_layers = nn.ModuleList([
-            LowRankKernel2d(self.width, rank=rank) for _ in range(num_layers)
+            LowRankKernel2d(self.width, rank=rank, hidden_dim=kernel_hidden_dim) for _ in range(num_layers)
         ])
-        self.proj1 = nn.Linear(self.width, 128)
-        self.proj2 = nn.Linear(128, out_channels)
+        self.proj1 = nn.Linear(self.width, proj_width)
+        self.proj2 = nn.Linear(proj_width, out_channels)
 
     def forward(self, x, coords=None):
         batch_size, height, width, _ = x.shape

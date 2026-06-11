@@ -14,8 +14,18 @@ training:
   batch_size: 20
   epochs: 500
   learning_rate: 0.001
+  weight_decay: 1e-4
   step_size: 100    # Halve learning rate every 100 epochs
   gamma: 0.5        # Multiplicative factor for learning rate decay
+
+seed:
+  value: 0
+  deterministic: false
+
+logging:
+  enabled: true
+  output_dir: "runs"
+  experiment_name: "darcy_fno2d"
 
 data:
   file_path: "data/piececonst_r421_N1024_smooth1.mat"

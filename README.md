@@ -14,8 +14,7 @@ From-scratch PyTorch reproduction of "Neural Operator: Learning Maps Between Fun
 Run the original FNO scripts:
 
 ```bash
-python scripts/train_burgers.py
-python scripts/train_darcy.py
+python scripts/train_burgers.py --config configs/burgers_fno1d.yaml
 ```
 
 Run any Darcy operator config through the generic trainer:
@@ -26,6 +25,14 @@ python scripts/train_darcy_operator.py --config configs/darcy_gno2d.yaml
 python scripts/train_darcy_operator.py --config configs/darcy_lno2d.yaml
 python scripts/train_darcy_operator.py --config configs/darcy_mgno2d.yaml
 ```
+
+Each config includes a `seed` block and a `logging` block. Training writes:
+
+- `runs/<experiment>_<timestamp>/config.yaml`
+- `runs/<experiment>_<timestamp>/metrics.csv`
+- `runs/<experiment>_<timestamp>/best_model.pt`
+- `runs/<experiment>_<timestamp>/last_model.pt`
+- `runs/<experiment>_<timestamp>/summary.json`
 
 ## Data
 

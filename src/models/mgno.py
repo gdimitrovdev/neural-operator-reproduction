@@ -9,9 +9,10 @@ class MGNO2d(nn.Module):
     Implements a 2-level V-cycle (Fine Grid -> Coarse Grid -> Fine Grid)
     using coordinate-based downsampling and GNO layers.
     """
-    def __init__(self, in_channels, out_channels, width, radius_fine=0.15, radius_coarse=0.45, chunk_size=64):
+    def __init__(self, in_channels, out_channels, width, radius_fine=0.15, radius_coarse=0.45, chunk_size=64, coarsening_stride=4, proj_width=128):
         super(MGNO2d, self).__init__()
         self.width = width
+        self.coarsening_stride = coarsening_stride
 
         # Lifting
         self.lift = nn.Linear(in_channels, self.width)
@@ -22,8 +23,8 @@ class MGNO2d(nn.Module):
         self.fine_layer2 = GNOLayer(self.width, self.width, radius=radius_fine, chunk_size=chunk_size)
 
         # Projection
-        self.proj1 = nn.Linear(self.width, 128)
-        self.proj2 = nn.Linear(128, out_channels)
+        self.proj1 = nn.Linear(self.width, proj_width)
+        self.proj2 = nn.Linear(proj_width, out_channels)
 
     def forward(self, x, coords):
         """
@@ -39,7 +40,7 @@ class MGNO2d(nn.Module):
 
         # 2. Downward Pass: Coarsen the coordinates (Subsample every 4th node for simplicity)
         # In practice, this represents spatial clustering or grid decimation
-        coarse_indices = torch.arange(0, num_nodes, step=4, device=x.device)
+        coarse_indices = torch.arange(0, num_nodes, step=self.coarsening_stride, device=x.device)
         coords_coarse = coords[:, coarse_indices, :]
         h_coarse_pooled = h_fine[:, coarse_indices, :]
 

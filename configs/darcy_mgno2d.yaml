@@ -11,8 +11,18 @@ training:
   batch_size: 5
   epochs: 500
   learning_rate: 0.001
+  weight_decay: 1e-4
   step_size: 100
   gamma: 0.5
+
+seed:
+  value: 0
+  deterministic: false
+
+logging:
+  enabled: true
+  output_dir: "runs"
+  experiment_name: "darcy_mgno2d"
 
 data:
   file_path: "data/piececonst_r421_N1024_smooth1.mat"
