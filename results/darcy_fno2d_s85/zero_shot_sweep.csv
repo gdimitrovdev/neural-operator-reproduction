@@ -1,0 +1,5 @@
+resolution,test_rel_l2,num_samples,train_resolution,mode
+85,0.008821,200,85,sweep
+141,0.051546,200,85,sweep
+211,0.078445,200,85,sweep
+421,0.106990,200,85,sweep

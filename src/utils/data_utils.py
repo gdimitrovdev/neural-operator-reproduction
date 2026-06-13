@@ -3,7 +3,8 @@ from torch.utils.data import Dataset
 import scipy.io
 
 def load_mat_pair(file_path, x_key, y_key):
-    mat_data = scipy.io.loadmat(file_path)
+    # Load only the two needed arrays; Darcy files hold 5 arrays of ~1.5 GB each.
+    mat_data = scipy.io.loadmat(file_path, variable_names=(x_key, y_key))
     missing = [key for key in (x_key, y_key) if key not in mat_data]
     if missing:
         available = sorted(key for key in mat_data.keys() if not key.startswith("__"))

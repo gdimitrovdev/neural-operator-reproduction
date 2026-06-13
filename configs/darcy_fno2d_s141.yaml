@@ -1,0 +1,41 @@
+# Configuration for FNO on Darcy Flow (2D) at resolution 141.
+# Same model/training as darcy_fno2d.yaml; only the test resolution changes,
+# to fill a second same-resolution cell of Table 2 (train and test at s=141).
+model:
+  name: "FNO2d"
+  in_channels: 1
+  out_channels: 1
+  modes1: 12        # Retain 12 low-frequency modes on X-axis
+  modes2: 12        # Retain 12 low-frequency modes on Y-axis
+  width: 32         # Hidden channel dimension
+  num_layers: 4     # Number of integral operator layers
+  padding: 9         # Zero padding used for non-periodic Darcy inputs
+  append_grid: true  # Append (x, y) coordinates before lifting
+
+training:
+  batch_size: 20
+  epochs: 500
+  learning_rate: 0.001
+  weight_decay: 1e-4
+  step_size: 100    # Halve learning rate every 100 epochs
+  gamma: 0.5        # Multiplicative factor for learning rate decay
+
+seed:
+  value: 0
+  deterministic: false
+
+logging:
+  enabled: true
+  output_dir: "runs"
+  experiment_name: "darcy_fno2d_s141"
+
+data:
+  file_path: "data/piececonst_r421_N1024_smooth1.mat"
+  test_file_path: "data/piececonst_r421_N1024_smooth2.mat"
+  normalize: true     # pointwise Gaussian normalization (official FNO Darcy setup)
+  x_key: "coeff"
+  y_key: "sol"
+  num_train: 1000
+  num_test: 200
+  subsample: 3        # 421 subsampled by 3 gives 141x141
+  resolution: 141     # 421 subsampled by 3 gives 141x141

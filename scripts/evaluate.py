@@ -88,7 +88,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", required=True, help="run directory written by training (contains config.yaml and best_model.pt)")
     parser.add_argument("--checkpoint", default=None, help="checkpoint path (default: <run>/best_model.pt)")
-    parser.add_argument("--resolutions", type=int, nargs="+", default=None)
+    parser.add_argument("--mode", choices=["same", "sweep"], default="same",
+                        help="'same' (default): evaluate only at the model's training resolution — this is the "
+                             "Table 2/3 protocol ('train and test on the same resolution'). 'sweep': evaluate "
+                             "across resolutions the model was NOT trained on (zero-shot super-resolution, paper "
+                             "section 7.2.3) — only comparable to the paper's super-resolution experiments, not Tables 2/3.")
+    parser.add_argument("--resolutions", type=int, nargs="+", default=None,
+                        help="override the resolutions to evaluate (defaults: training resolution for 'same', "
+                             "the paper's full list for 'sweep')")
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
@@ -132,7 +139,14 @@ def main():
         x_train_full = train_dataset.x[:data_config["num_train"]]
         y_train_full = train_dataset.y[:data_config["num_train"]]
 
-    requested = args.resolutions or (DEFAULT_RESOLUTIONS_2D if two_d else DEFAULT_RESOLUTIONS_1D)
+    train_res = data_config.get("resolution", full // data_config.get("subsample", 1))
+
+    if args.resolutions:
+        requested = args.resolutions
+    elif args.mode == "same":
+        requested = [train_res]
+    else:
+        requested = DEFAULT_RESOLUTIONS_2D if two_d else DEFAULT_RESOLUTIONS_1D
     resolutions = []
     for res in requested:
         if reachable(full, res, two_d):
@@ -142,8 +156,14 @@ def main():
     if not resolutions:
         raise ValueError(f"no requested resolution is reachable from full resolution {full}")
 
-    train_res = data_config.get("resolution", full // data_config.get("subsample", 1))
     print(f"{config['model']['name']} | trained at resolution {train_res} | checkpoint {checkpoint_path}")
+    if args.mode == "same":
+        print("mode: same-resolution (Table 2/3 protocol — train and test on the same resolution)")
+    else:
+        print("mode: zero-shot super-resolution (trained at one resolution, tested at others; paper section 7.2.3)")
+        if config["model"].get("padding", 0):
+            print(f"  WARNING: model uses padding={config['model']['padding']}, which spans a different physical "
+                  f"fraction of the domain at each resolution and inflates zero-shot error away from train res {train_res}.")
     if graph_model and any(r > train_res for r in resolutions):
         print("note: graph-model cost grows as O(num_nodes^2); high resolutions may be very slow")
 
@@ -170,13 +190,14 @@ def main():
         results.append((res, error))
         print(f"s = {res:5d} | relative L2 = {error:.4f}")
 
-    out_path = os.path.join(args.run, "resolution_sweep.csv")
+    out_name = "same_resolution_eval.csv" if args.mode == "same" else "zero_shot_sweep.csv"
+    out_path = os.path.join(args.run, out_name)
     with open(out_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["resolution", "test_rel_l2", "num_samples"])
+        writer.writerow(["resolution", "test_rel_l2", "num_samples", "train_resolution", "mode"])
         for res, error in results:
-            writer.writerow([res, f"{error:.6f}", x_test_full.size(0)])
-    print(f"Saved sweep to: {out_path}")
+            writer.writerow([res, f"{error:.6f}", x_test_full.size(0), train_res, args.mode])
+    print(f"Saved to: {out_path}")
 
 
 if __name__ == "__main__":
