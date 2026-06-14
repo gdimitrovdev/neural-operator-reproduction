@@ -1,0 +1,35 @@
+model:
+  name: FNO2d
+  in_channels: 1
+  out_channels: 1
+  modes1: 12
+  modes2: 12
+  width: 32
+  num_layers: 4
+  padding: 9
+  append_grid: true
+training:
+  batch_size: 20
+  epochs: 500
+  learning_rate: 0.001
+  weight_decay: 1e-4
+  step_size: 100
+  gamma: 0.5
+seed:
+  value: 0
+  deterministic: false
+logging:
+  enabled: true
+  output_dir: runs
+  experiment_name: darcy_fno2d_s141
+data:
+  file_path: data/piececonst_r421_N1024_smooth1.mat
+  test_file_path: data/piececonst_r421_N1024_smooth2.mat
+  normalize: true
+  x_key: coeff
+  y_key: sol
+  num_train: 1000
+  num_test: 200
+  subsample: 3
+  resolution: 141
+_config_path: configs/darcy_fno2d_s141.yaml
