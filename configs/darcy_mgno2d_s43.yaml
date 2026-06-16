@@ -8,8 +8,8 @@ model:
   chunk_size: 64
 
 training:
-  batch_size: 2     # dense O(N^2) kernel: keep batch small to fit GPU memory
-  epochs: 200
+  batch_size: 1
+  epochs: 100
   learning_rate: 0.001
   weight_decay: 1e-4
   step_size: 100
@@ -30,7 +30,7 @@ data:
   normalize: true
   x_key: "coeff"
   y_key: "sol"
-  num_train: 1000
+  num_train: 500
   num_test: 200
   subsample: 10     # 421 subsampled by 10 gives 43x43
   resolution: 43
