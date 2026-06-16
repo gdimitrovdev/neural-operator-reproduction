@@ -1,0 +1,33 @@
+data:
+  file_path: data/piececonst_r421_N1024_smooth1.mat
+  normalize: true
+  num_test: 200
+  num_train: 1000
+  resolution: 85
+  subsample: 5
+  test_file_path: data/piececonst_r421_N1024_smooth2.mat
+  x_key: coeff
+  y_key: sol
+logging:
+  enabled: true
+  experiment_name: darcy_lno2d
+  output_dir: runs
+model:
+  append_grid: true
+  in_channels: 1
+  name: LNO2d
+  num_layers: 4
+  out_channels: 1
+  rank: 16
+  width: 32
+seed:
+  deterministic: false
+  value: 0
+training:
+  batch_size: 20
+  epochs: 200
+  gamma: 0.5
+  learning_rate: 0.001
+  step_size: 100
+  weight_decay: 1e-4
+_config_path: configs/darcy_lno2d_ep200.yaml
