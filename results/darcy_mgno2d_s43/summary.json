@@ -1,0 +1,6 @@
+{
+  "final_epoch": 99,
+  "final_train_rel_l2": 0.05387644651532173,
+  "final_test_rel_l2": 0.0505184593424201,
+  "best_test_rel_l2": 0.04802660157904029
+}
