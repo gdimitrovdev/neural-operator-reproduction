@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import time
 
 import torch
 import torch.optim as optim
@@ -109,7 +110,9 @@ def main():
         y_normalizer.to(device)
 
     resolution = data_config["resolution"]
-    for epoch in range(config["training"]["epochs"]):
+    total_epochs = config["training"]["epochs"]
+    start_time = time.time()
+    for epoch in range(total_epochs):
         model.train()
         train_loss = 0.0
         for x, y in train_loader:
@@ -149,11 +152,16 @@ def main():
         logger.log_epoch(epoch, train_loss, test_loss, learning_rate)
         logger.save_checkpoint(model, optimizer, scheduler, epoch, train_loss, test_loss)
 
-        if epoch % 10 == 0:
-            print(
-                f"Epoch {epoch} | Train Rel L2: {train_loss:.4f} "
-                f"| Test Rel L2: {test_loss:.4f}"
-            )
+        done = epoch + 1
+        elapsed = time.time() - start_time
+        per_ep = elapsed / done
+        eta = per_ep * (total_epochs - done)
+        print(
+            f"epoch {done:>4}/{total_epochs} ({100 * done // total_epochs:3d}%) "
+            f"| train {train_loss:.4f} | test {test_loss:.4f} "
+            f"| {per_ep:.1f}s/ep | ETA {eta / 60:.1f}m",
+            flush=True,
+        )
 
     logger.save_summary(config["training"]["epochs"] - 1, train_loss, test_loss)
     if logger.run_dir is not None:

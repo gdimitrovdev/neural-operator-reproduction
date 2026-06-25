@@ -5,7 +5,13 @@ import torch.nn.functional as F
 class GNOLayer(nn.Module):
     """
     Pure-PyTorch Graph Neural Operator Layer.
-    Computes kernel integration on coordinate-based graphs using a threshold radius.
+
+    Discretizes the truncated kernel integral u(x) = (1/J) sum_{y in B(x,r)} k(x,y) v(y)
+    (paper section 4.1). The neighborhood B(x,r) is the paper's domain truncation to a
+    ball of radius r.
+
+    `chunk_size` is retained for config compatibility but unused (the sparse path needs
+    no chunking).
     """
     def __init__(self, in_channels, out_channels, coord_dim=2, radius=0.25, chunk_size=64, kernel_hidden_dim=64):
         super(GNOLayer, self).__init__()
@@ -22,6 +28,26 @@ class GNOLayer(nn.Module):
         )
         self.source_linear = nn.Linear(in_channels, out_channels)
         self.local_linear = nn.Linear(in_channels, out_channels)
+        self._edge_cache = {}
+
+    def _radius_edges(self, coords_2d):
+        """Edge list (target, source) of pairs within self.radius, for a single grid.
+
+        The grid is identical across the batch and fixed across epochs, so the radius
+        graph is built once (a one-off dense distance computation, no autograd) and
+        cached by node count. Self-pairs are included (dist 0 <= r), matching the
+        previous dense mask.
+        """
+        n = coords_2d.size(0)
+        cached = self._edge_cache.get(n)
+        if cached is None:
+            with torch.no_grad():
+                dist = torch.cdist(coords_2d, coords_2d)
+                tgt, src = torch.where(dist <= self.radius)
+            cached = (tgt, src)
+            self._edge_cache[n] = cached
+        tgt, src = cached
+        return tgt.to(coords_2d.device), src.to(coords_2d.device)
 
     def forward(self, h, coords):
         """
@@ -30,38 +56,19 @@ class GNOLayer(nn.Module):
             coords: Node coordinates of shape (batch, num_nodes, coord_dim)
         """
         batch_size, num_nodes, _ = h.shape
-        outputs = []
-        quadrature_weight = 1.0 / num_nodes
+        tgt, src = self._radius_edges(coords[0])
 
-        for start in range(0, num_nodes, self.chunk_size):
-            stop = min(start + self.chunk_size, num_nodes)
-            target_coords = coords[:, start:stop, :]
-            chunk_nodes = stop - start
+        edge_coords = torch.cat([coords[0][tgt], coords[0][src]], dim=-1)
+        kernel_weights = self.kernel_mlp(edge_coords)
 
-            coords_i = target_coords.unsqueeze(2)
-            coords_j = coords.unsqueeze(1)
-            diff = coords_i - coords_j
-            dist = torch.norm(diff, p=2, dim=-1)
-            adj_mask = (dist <= self.radius).to(dtype=h.dtype)
+        source_values = self.source_linear(h)
+        messages = kernel_weights.unsqueeze(0) * source_values[:, src]
 
-            concat_coords = torch.cat([
-                coords_i.expand(-1, -1, num_nodes, -1),
-                coords_j.expand(-1, chunk_nodes, -1, -1),
-            ], dim=-1)
+        aggregated = h.new_zeros(batch_size, num_nodes, self.out_channels)
+        aggregated.index_add_(1, tgt, messages)
+        aggregated = aggregated / num_nodes
 
-            kernel_weights = self.kernel_mlp(concat_coords.reshape(-1, concat_coords.size(-1)))
-            kernel_weights = kernel_weights.view(batch_size, chunk_nodes, num_nodes, self.out_channels)
-            source_values = self.source_linear(h)
-            messages = source_values.unsqueeze(1) * kernel_weights
-            messages = messages * adj_mask.unsqueeze(-1)
-            aggregated_chunk = messages.sum(dim=2) * quadrature_weight
-            outputs.append(aggregated_chunk)
-
-        aggregated = torch.cat(outputs, dim=1)
-
-        # 5. Combine non-local kernel integral with pointwise local linear transform
-        out = aggregated + self.local_linear(h)
-        return out
+        return aggregated + self.local_linear(h)
 
 
 class GNO2d(nn.Module):
